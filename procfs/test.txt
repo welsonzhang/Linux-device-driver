@@ -1,0 +1,3 @@
+echo 1101 >/proc/proc_demo/bin2dec
+cat /proc/proc_demo/bin2dec
+cat /proc/proc_demo/readonly
