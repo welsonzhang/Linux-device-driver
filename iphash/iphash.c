@@ -79,7 +79,7 @@ void clear_hash()
 	int i;
 	struct hlist_head *head;
 	struct hlist_node *pos, *n;
-	struct ipinfo *info;
+	struct ipinfo *info_ptr;
 	
 	for(i = 0; i < num_buckets; i++)
 	{
@@ -88,9 +88,14 @@ void clear_hash()
 		head = &bucket->list;
 		pos = NULL;
 		n = NULL;
-		hlist_for_each_entry_safe(info, n, head, hashnode) {
-			;
-		}	
+		if(!hlist_empty(head)) {
+			hlist_for_each_safe(pos, n, head) {
+				info_ptr = list_entry(pos, struct ipinfo, hashnode);
+				bucket->depth--;	
+				hlist_del(&info_ptr->hashnode);
+				kfree(info_ptr);
+			}	
+		}
 		spin_unlock_bh(&bucket->lock);
 		
 	}
