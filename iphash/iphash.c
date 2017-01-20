@@ -107,7 +107,10 @@ u16 ipkey(u32 ip_addr)
 int hash_add(u32 ip_addr)
 {	
 	u16 key;
+	unsigned exist = 0;
+	struct ipinfo *info_ptr;
 	struct hlist_head *head;
+	struct hlist_node *pos, *n;
 
 	struct ipinfo *info = kmalloc(sizeof(struct ipinfo), GFP_ATOMIC);
 	if(!info) {
@@ -118,11 +121,24 @@ int hash_add(u32 ip_addr)
 	struct conn_bucket *bucket = &g_conn_bucket[key];
 
 	spin_lock_bh(&bucket->lock);
+       	pos = NULL;
+        n = NULL;
 	head = &bucket->list;
-	hlist_add_head(&info->hashnode, head);
-	bucket->depth++;
-	if(bucket->depth > 100) {
-		printk("bucket depth is too long!\n");
+	if(!hlist_empty(head)) {
+        	hlist_for_each_entry_safe(info, n, head, hashnode) {
+       			info_ptr = list_entry(pos, struct ipinfo, hashnode);
+			if(info_ptr->ip_addr == ip_addr) {
+				exist = 1;
+				break;
+			} 
+        	}
+	}
+	if(exist == 0) {
+		hlist_add_head(&info->hashnode, head);
+		bucket->depth++;
+		if(bucket->depth > 100) {
+			printk("bucket depth is too long!\n");
+		}
 	}
 	spin_unlock_bh(&bucket->lock);
 
@@ -155,10 +171,12 @@ static void hello_exit(void)
         n = NULL;
 
         read_lock_bh(&bucket->lock);
-        hlist_for_each_safe(pos, n, head) {
-        	info = list_entry(pos, struct ipinfo, hashnode);
-                printk("%x\n", info->ip_addr);
-        }
+	if(!hlist_empty(head)) {
+        	hlist_for_each_safe(pos, n, head) {
+        		info = list_entry(pos, struct ipinfo, hashnode);
+                	printk("%x\n", info->ip_addr);
+        	}
+	}
         read_unlock_bh(&bucket->lock);
 	clear_hash();	
 	printk("Goodbye, cruel world\n");
