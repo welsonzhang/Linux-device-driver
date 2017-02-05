@@ -5,8 +5,17 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/rcupdate.h>
+#include <linux/fs.h>
+#include <linux/miscdevice.h>
+#include <asm/uaccess.h>
+#include <linux/inet.h>
 
 MODULE_LICENSE("Dual BSD/GPL");
+
+#define DEVICE_NAME "iphash"
+
+unsigned iphash_test = 1;
+module_param(iphash_test, uint, 0644);
 
 unsigned num_buckets = 65535;
 
@@ -46,6 +55,17 @@ int init_hash()
     return 0;
 }
 
+char *in_ntoa(u32 addr)
+{
+	static char buf[12];
+	sprintf(buf, "%d.%d.%d.%d",
+		addr & 0xff,
+		addr>>8 & 0xff,
+		addr >>16 & 0xff,
+		addr >>24 & 0xff);
+	return buf;
+}
+
 void show_hash(void)
 {
 #if 1
@@ -64,7 +84,7 @@ void show_hash(void)
 		if(!hlist_empty(head)) {
         		hlist_for_each_safe(pos, n, head) {
                 		info = list_entry(pos, struct ipinfo, hashnode);
-                		printk("%x\n", info->ip_addr);
+                		printk("%s\n", in_ntoa(info->ip_addr));
         		}
 		}
 		
@@ -150,17 +170,64 @@ int hash_add(u32 ip_addr)
 	return 0;
 }
 
-static int hello_init(void)
+static ssize_t ip_hash_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
+{
+	int ret = 0;
+	char tmp[6] = {'d','o','n','e','\n','\0'};	
+	if(*ppos > 0)
+		return 0;
+	*ppos += count;
+	show_hash();
+	ret = copy_to_user(buf, (void*)tmp, 6);
+	if(ret) {
+		return -EINVAL;
+	}
+	return count;	
+}
+
+static ssize_t ip_hash_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos)
+{
+	int ret;
+	char tmp[15];	
+	printk(KERN_ALERT"test\n");
+	ret = copy_from_user(tmp, buf, 15);
+	char *ptr = tmp;
+	printk("test:%s\n", ptr);
+	u32 int_addr;
+	int_addr = in_aton(ptr);
+	printk("test:%x\n", int_addr);
+	hash_add(int_addr);
+	return count;
+}
+
+static struct file_operations dev_fops = 
+{
+	.owner = THIS_MODULE,
+	.read = ip_hash_read,
+	.write = ip_hash_write
+};
+
+static struct miscdevice misc = 
+{
+	.minor = MISC_DYNAMIC_MINOR,
+	.name = DEVICE_NAME,
+	.fops = &dev_fops
+};
+
+static int ip_hash_init(void)
 {
 	int ret;
 	ret = init_hash();
+	ret = misc_register(&misc);
 	u32 addr = 0x0A0000FF;
 	ret = hash_add(addr);
 	printk("Hello, world\n");
 }
 
-static void hello_exit(void)
+static void ip_hash_exit(void)
 {
+	misc_deregister(&misc);	
+
 	show_hash();
 
 	struct ipinfo *info;
@@ -187,5 +254,11 @@ static void hello_exit(void)
 	printk("Goodbye, cruel world\n");
 }
 
-module_init(hello_init);
-module_exit(hello_exit);
+
+module_init(ip_hash_init);
+module_exit(ip_hash_exit);
+
+MODULE_AUTHOR("welsonzhang");
+MODULE_DESCRIPTION("statistics of ip hash.");
+MODULE_ALIAS("ip hash module.");
+MODULE_LICENSE("GPL");
